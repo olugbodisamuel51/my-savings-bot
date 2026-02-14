@@ -1,4 +1,3 @@
-import sqlite3
 import requests
 import datetime
 import os
@@ -10,37 +9,24 @@ from flask import Flask, request, jsonify
 app = Flask(__name__)
 
 # ==========================================
-# ⚙️ CONFIGURATION (Loaded from Environment Variables)
+# ⚙️ CONFIGURATION
 # ==========================================
-# We use os.environ.get() so we can hide these secrets on Render later
 MONNIFY_API_KEY = os.environ.get("MONNIFY_API_KEY")
 MONNIFY_SECRET = os.environ.get("MONNIFY_SECRET")
 MONNIFY_CONTRACT_CODE = os.environ.get("MONNIFY_CONTRACT_CODE")
 MY_MONNIFY_WALLET_ACCOUNT = os.environ.get("MY_MONNIFY_WALLET_ACCOUNT")
 
-MY_REAL_BANK_CODE = os.environ.get("MY_REAL_BANK_CODE", "999992") # Default to Opay
+MY_REAL_BANK_CODE = os.environ.get("MY_REAL_BANK_CODE", "999992") 
 MY_REAL_ACCOUNT_NUM = os.environ.get("MY_REAL_ACCOUNT_NUM")
 SAVINGS_PERCENTAGE = 0.20
 # ==========================================
 
-# --- DATABASE SETUP ---
-def init_db():
-    conn = sqlite3.connect('mysavings.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS savings 
-                 (id INTEGER PRIMARY KEY, amount REAL, date_saved TEXT, status TEXT)''')
-    conn.commit()
-    conn.close()
-
-init_db()
-
 # --- HELPER: AUTHENTICATE ---
 def get_monnify_token():
-    # Detect if we are in Test or Live mode based on the Key format
     if "MK_PROD" in MONNIFY_API_KEY:
-        auth_url = "https://api.monnify.com/api/v1/auth/login" # LIVE URL
+        auth_url = "https://api.monnify.com/api/v1/auth/login"
     else:
-        auth_url = "https://sandbox.monnify.com/api/v1/auth/login" # TEST URL
+        auth_url = "https://sandbox.monnify.com/api/v1/auth/login"
         
     credentials = f"{MONNIFY_API_KEY}:{MONNIFY_SECRET}"
     encoded_credentials = base64.b64encode(credentials.encode()).decode()
@@ -64,7 +50,6 @@ def transfer_to_spending(amount):
     token = get_monnify_token()
     if not token: return False
     
-    # URL depends on Test vs Live
     if "MK_PROD" in MONNIFY_API_KEY:
         transfer_url = "https://api.monnify.com/api/v2/disbursements/single"
     else:
@@ -101,7 +86,7 @@ def transfer_to_spending(amount):
 # --- WEBHOOK ---
 @app.route('/', methods=['GET'])
 def home():
-    return "🤖 Monnify Savings Bot is Running!", 200
+    return "🤖 Monnify Savings Bot is Running (Vercel Mode)!", 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -114,19 +99,12 @@ def webhook():
         else: payment_data = data
             
         amount_paid = payment_data.get('amountPaid')
-        email = payment_data.get('customer', {}).get('email')
         
+        # Calculate Split
         savings_amount = amount_paid * SAVINGS_PERCENTAGE
         spending_amount = amount_paid - savings_amount
         
-        # Log to DB
-        conn = sqlite3.connect('mysavings.db')
-        c = conn.cursor()
-        c.execute("INSERT INTO savings (amount, date_saved, status) VALUES (?, ?, ?)",
-                  (savings_amount, str(datetime.date.today()), 'LOCKED'))
-        conn.commit()
-        conn.close()
-        
+        # Trigger Transfer (No DB Saving)
         transfer_to_spending(spending_amount)
         return jsonify({"status": "success"}), 200
 
